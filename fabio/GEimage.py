@@ -1,50 +1,47 @@
 # coding: utf-8
 #
 #    Project: X-ray image reader
-#             https://github.com/silx-kit/fabio
+#    https://github.com/silx-kit/fabio
+#
+#    Copyright (C) European Synchrotron Radiation Facility,
+#        Grenoble, France
+#
+#    Principal author: Jérôme Kieffer (Jerome.Kieffer@ESRF.eu)
+#
+# Permission is hereby granted, free of charge, to any person obtaining
+# a copy of this software and associated documentation files (the
+# "Software"), to deal in the Software without restriction, including
+# without limitation the rights to use, copy, modify, merge, publish,
+# distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so, subject to
+# the following conditions: The above copyright notice and this
+# permission notice shall be included in all copies or substantial
+# portions of the Software.  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT
+# WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+# TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+# PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+# COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+# OTHER DEALINGS IN THE SOFTWARE.
 #
 #
-#    Copyright (C) European Synchrotron Radiation Facility, Grenoble, France
+#    Reads the header from a GE a-Si Angio Detector
+#    Using version 8001 of the header from file:
+#        c:\adept\core\DefaultImageInfoConfig.csv
 #
-#    Principal author:       Jérôme Kieffer (Jerome.Kieffer@ESRF.eu)
+#    Antonino Miceli Thu Jan 4 13:46:31 CST 2007
 #
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-# THE SOFTWARE.
-#
-#
-#
-# Reads the header from a GE a-Si Angio Detector
-# Using version 8001 of the header from file:
-#     c:\adept\core\DefaultImageInfoConfig.csv
-#
-#  Antonino Miceli
-#  Thu Jan  4 13:46:31 CST 2007
-#
-
 # modifications by Jon Wright for style, pychecker and fabio
 #
 
-__authors__ = ["Antonino Miceli", "Jon Wright", "Jérôme Kieffer"]
+__authors__ = ["Antonino Miceli", "Jon Wright", "Jérôme Kieffer", "Joel Bernier"]
 __date__ = "03/04/2020"
 __status__ = "production"
 __copyright__ = "2007 APS; 2010-2020 ESRF"
 __licence__ = "MIT"
 
+import os
 import numpy
 import struct
 import logging
@@ -243,7 +240,14 @@ class GeImage(FabioImage):
         infile = self._open(fname, "rb")
         self.sequencefilename = fname
         self._readheader(infile)
-        self._nframes = self.header['NumberOfFrames']
+        # !!!: So we can now have the case where the header has
+        #      been replaced with all 0's; need to use file size
+        #      and default attributes to suss our the nframes
+        # self.nframes = self.header['NumberOfFrames']
+        file_size = os.stat(fname).st_size
+        assert (numpy.remainder(file_size, self._BytesPerFrame)
+                == self._HeaderNBytes), "GE file size is incorrect!"
+        self.nframes = file_size//self._BytesPerFrame
         self._readframe(infile, frame)
         infile.close()
         return self
@@ -260,7 +264,7 @@ class GeImage(FabioImage):
         # raises an exception if you give an invalid image
         # otherwise fills in self.data
         """
-        if(img_num > self.nframes or img_num < 0):
+        if(img_num >= self.nframes or img_num < 0):
             raise Exception("Bad image number")
         imgstart = (self.header['StandardHeaderSizeInBytes'] +
                     self.header['UserHeaderSizeInBytes'] +
@@ -290,7 +294,7 @@ class GeImage(FabioImage):
         """
         Returns a frame as a new FabioImage object
         """
-        if num < 0 or num > self.nframes:
+        if num < 0 or num >= self.nframes:
             raise Exception("Requested frame number is out of range")
         # Do a deep copy of the header to make a new one
         newheader = {}
